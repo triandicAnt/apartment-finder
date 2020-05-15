@@ -10,6 +10,11 @@ It's recommended to follow the Docker installation and usage instructions.
 Settings
 --------------------
 
+## Create `priate.py` in config dir and add 
+```
+SLACK_TOKEN = ''
+```
+
 Look in `settings.py` for a full list of all the configuration options.  Here's a high level overview:
 
 * `MIN_PRICE` -- the minimum listing price you want to search for.

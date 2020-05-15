@@ -5,13 +5,16 @@ from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean
 from sqlalchemy.orm import sessionmaker
 from dateutil.parser import parse
 from util import post_listing_to_slack, find_points_of_interest
-from slackclient import SlackClient
+from slack import WebClient
 import time
 import settings
+from sqlalchemy import select
+
 
 engine = create_engine('sqlite:///listings.db', echo=False)
 
 Base = declarative_base()
+
 
 class Listing(Base):
     """
@@ -33,10 +36,47 @@ class Listing(Base):
     area = Column(String)
     bart_stop = Column(String)
 
+
 Base.metadata.create_all(engine)
 
 Session = sessionmaker(bind=engine)
 session = Session()
+
+
+def result_dict(r):
+    return dict(zip(r.keys(), r))
+
+
+def result_dicts(rs):
+    return list(map(result_dict, rs))
+
+
+def print_table():
+    stmt = select('*').select_from(Listing)
+    result = session.execute(stmt).fetchall()
+    print(result_dicts(result))
+
+
+def build_filters():
+    filters = {}
+    if hasattr(settings, 'MAX_PRICE'):
+        filters['max_price'] = settings.MAX_PRICE
+    if hasattr(settings, 'MIN_PRICE'):
+        filters['min_price'] = settings.MIN_PRICE
+    if hasattr(settings, 'MIN_BEDROOM'):
+        filters['min_bedrooms'] = settings.MIN_BEDROOM
+    if hasattr(settings, 'MAX_BEDROOM'):
+        filters['max_bedrooms'] = settings.MAX_BEDROOM
+    if hasattr(settings, 'SEARCH_DIST'):
+        filters['search_distance'] = settings.SEARCH_DIST
+    if hasattr(settings, 'ZIP_CODE'):
+        filters['zip_code'] = settings.ZIP_CODE
+    if hasattr(settings, 'POSTED_TODAY'):
+        filters['posted_today'] = settings.POSTED_TODAY
+    if hasattr(settings, 'HAS_IMAGE'):
+        filters['has_image'] = settings.HAS_IMAGE
+    return filters
+
 
 def scrape_area(area):
     """
@@ -44,11 +84,15 @@ def scrape_area(area):
     :param area:
     :return: A list of results.
     """
-    cl_h = CraigslistHousing(site=settings.CRAIGSLIST_SITE, area=area, category=settings.CRAIGSLIST_HOUSING_SECTION,
-                             filters={'max_price': settings.MAX_PRICE, "min_price": settings.MIN_PRICE})
 
+    cl_h = CraigslistHousing(
+        site=settings.CRAIGSLIST_SITE,
+        area=area,
+        category=settings.CRAIGSLIST_HOUSING_SECTION,
+        filters=build_filters()
+    )
     results = []
-    gen = cl_h.get_results(sort_by='newest', geotagged=True, limit=20)
+    gen = cl_h.get_results(sort_by='newest', geotagged=True,)
     while True:
         try:
             result = next(gen)
@@ -106,8 +150,8 @@ def scrape_area(area):
             # Return the result if it's near a bart station, or if it is in an area we defined.
             if len(result["bart"]) > 0 or len(result["area"]) > 0:
                 results.append(result)
-
     return results
+
 
 def do_scrape():
     """
@@ -115,7 +159,7 @@ def do_scrape():
     """
 
     # Create a slack client.
-    sc = SlackClient(settings.SLACK_TOKEN)
+    sc = WebClient(settings.SLACK_TOKEN)
 
     # Get all the results from craigslist.
     all_results = []
